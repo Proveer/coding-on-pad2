@@ -1,5 +1,11 @@
 package dev.codingonpad.news.ui
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -20,26 +26,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,7 +62,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +86,7 @@ import dev.codingonpad.news.data.FeedSource
 import dev.codingonpad.news.data.NewsItem
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.max
 
@@ -77,10 +97,25 @@ fun NewsScreen(
     onRefresh: () -> Unit,
     onSelectCategory: (FeedSource.Category?) -> Unit,
     onCycleTheme: () -> Unit,
-    onOpenArticle: (NewsItem) -> Unit
+    onOpenArticle: (NewsItem) -> Unit,
+    onQueryChange: (String) -> Unit,
+    onClearQuery: () -> Unit
 ) {
     val pullState = rememberPullToRefreshState()
     val haptics = LocalHapticFeedback.current
+
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                ?.trim()
+                .orEmpty()
+            if (spoken.isNotEmpty()) onQueryChange(spoken)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -113,6 +148,24 @@ fun NewsScreen(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
+                SearchBar(
+                    query = state.searchQuery,
+                    isSearching = state.isSearching,
+                    onQueryChange = onQueryChange,
+                    onClear = onClearQuery,
+                    onVoice = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(
+                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                            )
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Search news")
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                        }
+                        runCatching { voiceLauncher.launch(intent) }
+                    }
+                )
                 CategoryRow(
                     selected = state.selectedCategory,
                     onSelect = onSelectCategory
@@ -121,15 +174,35 @@ fun NewsScreen(
                     lastUpdated = state.lastUpdated,
                     itemCount = state.items.size,
                     failed = state.failedSources,
-                    error = state.error
+                    error = state.error,
+                    searchActive = state.searchQuery.isNotBlank()
                 )
             }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        val visible = remember(state.items, state.selectedCategory) {
-            state.items.filter {
+        val visible = remember(
+            state.items,
+            state.selectedCategory,
+            state.searchQuery,
+            state.liveResults
+        ) {
+            val byCategory = state.items.filter {
                 state.selectedCategory == null || it.category == state.selectedCategory
+            }
+            val q = state.searchQuery.trim()
+            if (q.isBlank()) {
+                byCategory
+            } else {
+                val needle = q.lowercase()
+                val localMatches = byCategory.filter {
+                    it.title.lowercase().contains(needle) ||
+                        it.summary.lowercase().contains(needle) ||
+                        it.source.lowercase().contains(needle)
+                }
+                (localMatches + state.liveResults)
+                    .distinctBy { it.url }
+                    .sortedByDescending { it.publishedAt }
             }
         }
         PullToRefreshBox(
@@ -141,7 +214,10 @@ fun NewsScreen(
                 .padding(padding)
         ) {
             if (visible.isEmpty() && !state.isLoading) {
-                EmptyState(state.error)
+                EmptyState(
+                    error = state.error,
+                    searching = state.searchQuery.isNotBlank()
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -150,15 +226,14 @@ fun NewsScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    itemsIndexed(visible, key = { _, it -> it.url }) { index, item ->
+                    items(visible, key = { it.url }) { item ->
                         NewsCard(
                             item = item,
-                            featured = index == 0,
                             modifier = Modifier.animateItem(
                                 fadeInSpec = tween(240),
                                 placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
                             ),
-                            onClick = {
+                            onOpen = {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onOpenArticle(item)
                             }
@@ -168,6 +243,60 @@ fun NewsScreen(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchBar(
+    query: String,
+    isSearching: Boolean,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+    onVoice: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        placeholder = {
+            Text(
+                "Search papers, AI, code\u2026",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        leadingIcon = {
+            Icon(Icons.Filled.Search, contentDescription = null)
+        },
+        trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = onClear) {
+                        Icon(Icons.Filled.Close, contentDescription = "Clear")
+                    }
+                }
+                IconButton(onClick = onVoice) {
+                    Icon(Icons.Filled.Mic, contentDescription = "Voice search")
+                }
+            }
+        },
+        singleLine = true,
+        shape = RoundedCornerShape(28.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    )
 }
 
 @Composable
@@ -213,18 +342,21 @@ private fun StatusBar(
     lastUpdated: Long,
     itemCount: Int,
     failed: List<String>,
-    error: String?
+    error: String?,
+    searchActive: Boolean
 ) {
     val text = buildString {
-        if (lastUpdated > 0L) {
-            append("UPDATED ")
-            append(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(lastUpdated)).uppercase())
-            append("  \u00b7  ")
-            append("$itemCount stories")
-        } else {
-            append("Pull to refresh")
+        when {
+            searchActive -> append("LIVE SEARCH  \u00b7  arXiv + Hacker News")
+            lastUpdated > 0L -> {
+                append("UPDATED ")
+                append(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(lastUpdated)).uppercase())
+                append("  \u00b7  ")
+                append("$itemCount stories")
+            }
+            else -> append("Pull to refresh")
         }
-        if (failed.isNotEmpty()) {
+        if (failed.isNotEmpty() && !searchActive) {
             append("  \u00b7  ")
             append("${failed.size} source(s) unavailable")
         }
@@ -246,12 +378,17 @@ private fun StatusBar(
 @Composable
 private fun NewsCard(
     item: NewsItem,
-    featured: Boolean,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onOpen: () -> Unit
 ) {
+    var expanded by rememberSaveable(item.url) { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+
     Card(
-        onClick = onClick,
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            expanded = !expanded
+        },
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -261,83 +398,89 @@ private fun NewsCard(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
         ),
-        shape = RoundedCornerShape(if (featured) 24.dp else 18.dp)
+        shape = RoundedCornerShape(18.dp)
     ) {
-        if (featured) FeaturedLayout(item) else CompactLayout(item)
-    }
-}
-
-@Composable
-private fun FeaturedLayout(item: NewsItem) {
-    Column {
-        Thumbnail(
-            item = item,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-            initialFontSize = 72
-        )
-        Column(Modifier.padding(18.dp)) {
-            MetaRow(item)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (item.category == FeedSource.Category.HACKER_NEWS) {
-                Spacer(Modifier.height(10.dp))
-                HnStatsRow(item)
-            } else if (item.summary.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = item.summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
+        Column {
+            Row(Modifier.padding(12.dp)) {
+                Thumbnail(
+                    item = item,
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(14.dp)),
+                    initialFontSize = 32
                 )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.fillMaxWidth()) {
+                    MetaRow(item)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = if (expanded) 5 else 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (item.category == FeedSource.Category.HACKER_NEWS) {
+                        Spacer(Modifier.height(6.dp))
+                        HnStatsRow(item)
+                    } else if (item.summary.isNotBlank() && !expanded) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = item.summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
-        }
-    }
-}
 
-@Composable
-private fun CompactLayout(item: NewsItem) {
-    Row(Modifier.padding(12.dp)) {
-        Thumbnail(
-            item = item,
-            modifier = Modifier
-                .size(96.dp)
-                .clip(RoundedCornerShape(14.dp)),
-            initialFontSize = 32
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.fillMaxWidth()) {
-            MetaRow(item)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (item.category == FeedSource.Category.HACKER_NEWS) {
-                Spacer(Modifier.height(6.dp))
-                HnStatsRow(item)
-            } else if (item.summary.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = item.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                ) {
+                    if (!item.imageUrl.isNullOrBlank() ||
+                        item.category != FeedSource.Category.HACKER_NEWS
+                    ) {
+                        Thumbnail(
+                            item = item,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .clip(RoundedCornerShape(16.dp)),
+                            initialFontSize = 64
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (item.summary.isNotBlank()) {
+                        Text(
+                            text = item.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    Button(
+                        onClick = onOpen,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Icon(Icons.Filled.OpenInNew, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "READ ARTICLE",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
     }
@@ -371,8 +514,12 @@ private fun HnStatsRow(item: NewsItem) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item.points?.let { StatChip(icon = { Icon(Icons.Filled.ArrowUpward, null, Modifier.size(14.dp)) }, text = "$it") }
-        item.commentCount?.let { StatChip(icon = { Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(14.dp)) }, text = "$it") }
+        item.points?.let {
+            StatChip(icon = { Icon(Icons.Filled.ArrowUpward, null, Modifier.size(14.dp)) }, text = "$it")
+        }
+        item.commentCount?.let {
+            StatChip(icon = { Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(14.dp)) }, text = "$it")
+        }
     }
 }
 
@@ -461,10 +608,15 @@ private fun GradientInitialTile(seed: String, fontSize: Int, modifier: Modifier 
 }
 
 @Composable
-private fun EmptyState(error: String?) {
+private fun EmptyState(error: String?, searching: Boolean) {
+    val message = when {
+        error != null -> error
+        searching -> "No matches yet. Try a different query."
+        else -> "No news yet. Pull to refresh."
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            text = error ?: "No news yet. Pull to refresh.",
+            text = message,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

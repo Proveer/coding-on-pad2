@@ -41,7 +41,9 @@ class MainActivity : ComponentActivity() {
                             onRefresh = viewModel::refresh,
                             onSelectCategory = viewModel::selectCategory,
                             onCycleTheme = viewModel::cycleTheme,
-                            onOpenArticle = viewModel::openArticle
+                            onOpenArticle = viewModel::openArticle,
+                            onQueryChange = viewModel::setSearchQuery,
+                            onClearQuery = viewModel::clearSearch
                         )
                     }
                 }

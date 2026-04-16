@@ -7,10 +7,14 @@ import androidx.lifecycle.viewModelScope
 import dev.codingonpad.news.NewsApp
 import dev.codingonpad.news.data.FeedSource
 import dev.codingonpad.news.data.NewsItem
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 enum class ThemePreference { AUTO, LIGHT, DARK }
@@ -23,9 +27,13 @@ data class NewsUiState(
     val selectedCategory: FeedSource.Category? = null,
     val failedSources: List<String> = emptyList(),
     val selectedArticle: NewsItem? = null,
-    val themePreference: ThemePreference = ThemePreference.AUTO
+    val themePreference: ThemePreference = ThemePreference.AUTO,
+    val searchQuery: String = "",
+    val liveResults: List<NewsItem> = emptyList(),
+    val isSearching: Boolean = false
 )
 
+@OptIn(FlowPreview::class)
 class NewsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = (app as NewsApp).repository
@@ -36,40 +44,74 @@ class NewsViewModel(app: Application) : AndroidViewModel(app) {
     )
     val state: StateFlow<NewsUiState> = _state.asStateFlow()
 
+    private val queryFlow = MutableStateFlow("")
+    private var liveSearchJob: Job? = null
+
     init {
         refresh()
+        viewModelScope.launch {
+            queryFlow
+                .drop(1)
+                .debounce(350)
+                .distinctUntilChanged()
+                .collect { q ->
+                    if (q.isBlank()) {
+                        _state.value = _state.value.copy(liveResults = emptyList(), isSearching = false)
+                    } else {
+                        runLiveSearch(q)
+                    }
+                }
+        }
     }
 
     fun refresh() {
         if (_state.value.isLoading) return
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            _state.value = _state.value.copy(isLoading = true, error = null)
             try {
                 val result = repo.fetchAll()
-                _state.update {
-                    it.copy(
-                        items = result.items,
-                        isLoading = false,
-                        lastUpdated = System.currentTimeMillis(),
-                        failedSources = result.failedSources
-                    )
-                }
+                _state.value = _state.value.copy(
+                    items = result.items,
+                    isLoading = false,
+                    lastUpdated = System.currentTimeMillis(),
+                    failedSources = result.failedSources
+                )
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, error = e.message ?: "Fetch failed") }
+                _state.value = _state.value.copy(isLoading = false, error = e.message ?: "Fetch failed")
             }
         }
     }
 
     fun selectCategory(category: FeedSource.Category?) {
-        _state.update { it.copy(selectedCategory = category) }
+        _state.value = _state.value.copy(selectedCategory = category)
     }
 
     fun openArticle(item: NewsItem) {
-        _state.update { it.copy(selectedArticle = item) }
+        _state.value = _state.value.copy(selectedArticle = item)
     }
 
     fun closeArticle() {
-        _state.update { it.copy(selectedArticle = null) }
+        _state.value = _state.value.copy(selectedArticle = null)
+    }
+
+    fun setSearchQuery(query: String) {
+        _state.value = _state.value.copy(searchQuery = query)
+        queryFlow.value = query
+    }
+
+    fun clearSearch() {
+        setSearchQuery("")
+    }
+
+    private fun runLiveSearch(q: String) {
+        liveSearchJob?.cancel()
+        liveSearchJob = viewModelScope.launch {
+            _state.value = _state.value.copy(isSearching = true)
+            val results = runCatching { repo.search.search(q) }.getOrDefault(emptyList())
+            if (_state.value.searchQuery == q) {
+                _state.value = _state.value.copy(liveResults = results, isSearching = false)
+            }
+        }
     }
 
     fun cycleTheme() {
@@ -79,7 +121,7 @@ class NewsViewModel(app: Application) : AndroidViewModel(app) {
             ThemePreference.DARK -> ThemePreference.AUTO
         }
         prefs.edit().putString(KEY_THEME, next.name).apply()
-        _state.update { it.copy(themePreference = next) }
+        _state.value = _state.value.copy(themePreference = next)
     }
 
     private fun loadThemePreference(): ThemePreference {

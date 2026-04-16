@@ -20,6 +20,8 @@ class FeedRepository(context: Context) {
         .cache(Cache(File(context.cacheDir, "http"), 10L * 1024 * 1024))
         .build()
 
+    val search: SearchService = SearchService(client)
+
     data class FetchResult(
         val items: List<NewsItem>,
         val failedSources: List<String>
