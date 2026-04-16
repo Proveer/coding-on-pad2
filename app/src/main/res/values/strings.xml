@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Coding on Pad</string>
+    <string name="refresh">Refresh</string>
+    <string name="all_sources">All</string>
+    <string name="no_items">No news yet. Pull to refresh.</string>
+    <string name="error_prefix">Error: </string>
+    <string name="last_updated">Updated %1$s</string>
+    <string name="never">never</string>
+</resources>
