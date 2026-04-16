@@ -7,5 +7,8 @@ data class NewsItem(
     val category: FeedSource.Category,
     val publishedAt: Long,
     val summary: String,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val points: Int? = null,
+    val commentCount: Int? = null,
+    val commentsUrl: String? = null
 )

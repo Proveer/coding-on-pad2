@@ -7,11 +7,16 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * Minimal RSS 2.0 + Atom 1.0 parser. Extracts title, link, date, summary, and a
- * best-effort thumbnail URL. Uses Android's XmlPullParser, which does not resolve
- * external entities by default.
+ * Minimal RSS 2.0 + Atom 1.0 parser. Extracts title, link, date, summary, a
+ * best-effort thumbnail, and HN-specific metadata. Uses Android's XmlPullParser,
+ * which does not resolve external entities by default.
  */
 object RssParser {
+
+    private val HN_POINTS = Regex("""Points:\s*(\d+)""")
+    private val HN_COMMENT_COUNT = Regex("""#\s*Comments:\s*(\d+)""")
+    private val HN_COMMENTS_URL = Regex("""Comments URL:\s*(\S+)""")
+    private val HN_ARTICLE_URL = Regex("""Article URL:\s*(\S+)""")
 
     fun parse(xml: String, source: FeedSource): List<NewsItem> {
         val items = mutableListOf<NewsItem>()
@@ -68,7 +73,7 @@ object RssParser {
                     val tag = parser.name
                     if ((tag == "item" || tag == "entry") && inEntry) {
                         val title = current["title"].orEmpty()
-                        val url = current["link"].orEmpty()
+                        val link = current["link"].orEmpty()
                         val rawSummary = current["description"]
                             ?: current["summary"]
                             ?: current["content:encoded"]
@@ -80,15 +85,35 @@ object RssParser {
                             ?: current["dc:date"]
                             ?: ""
                         if (image == null) image = extractFirstImg(rawSummary)
-                        if (title.isNotBlank() && url.isNotBlank()) {
+
+                        val isHn = source.category == FeedSource.Category.HACKER_NEWS
+                        val articleUrl = if (isHn) {
+                            HN_ARTICLE_URL.find(rawSummary)?.groupValues?.get(1) ?: link
+                        } else link
+
+                        val summaryText = if (isHn) "" else cleanHtml(rawSummary).take(500)
+                        val points = if (isHn) {
+                            HN_POINTS.find(rawSummary)?.groupValues?.get(1)?.toIntOrNull()
+                        } else null
+                        val commentCount = if (isHn) {
+                            HN_COMMENT_COUNT.find(rawSummary)?.groupValues?.get(1)?.toIntOrNull()
+                        } else null
+                        val commentsUrl = if (isHn) {
+                            HN_COMMENTS_URL.find(rawSummary)?.groupValues?.get(1)
+                        } else null
+
+                        if (title.isNotBlank() && articleUrl.isNotBlank()) {
                             items += NewsItem(
                                 title = cleanHtml(title),
-                                url = url.trim(),
+                                url = articleUrl.trim(),
                                 source = source.name,
                                 category = source.category,
                                 publishedAt = parseDate(date),
-                                summary = cleanHtml(rawSummary).take(500),
-                                imageUrl = image
+                                summary = summaryText,
+                                imageUrl = image,
+                                points = points,
+                                commentCount = commentCount,
+                                commentsUrl = commentsUrl
                             )
                         }
                         inEntry = false
