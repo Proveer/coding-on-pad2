@@ -6,5 +6,6 @@ data class NewsItem(
     val source: String,
     val category: FeedSource.Category,
     val publishedAt: Long,
-    val summary: String
+    val summary: String,
+    val imageUrl: String? = null
 )

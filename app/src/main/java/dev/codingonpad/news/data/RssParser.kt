@@ -7,8 +7,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * Minimal RSS 2.0 + Atom 1.0 parser. Extracts title, link, date, and a short summary.
- * Uses Android's XmlPullParser, which does not resolve external entities by default.
+ * Minimal RSS 2.0 + Atom 1.0 parser. Extracts title, link, date, summary, and a
+ * best-effort thumbnail URL. Uses Android's XmlPullParser, which does not resolve
+ * external entities by default.
  */
 object RssParser {
 
@@ -19,6 +20,7 @@ object RssParser {
         parser.setInput(StringReader(xml))
 
         val current = mutableMapOf<String, String>()
+        var image: String? = null
         var inEntry = false
 
         var event = parser.eventType
@@ -29,9 +31,11 @@ object RssParser {
                     if (tag == "item" || tag == "entry") {
                         inEntry = true
                         current.clear()
+                        image = null
                     } else if (inEntry) {
                         when (tag) {
-                            "title", "description", "summary", "content",
+                            "title", "description", "summary",
+                            "content", "content:encoded",
                             "pubDate", "published", "updated", "dc:date" ->
                                 current[tag] = safeText(parser)
                             "link" -> {
@@ -43,6 +47,20 @@ object RssParser {
                                     current["link"] = safeText(parser)
                                 }
                             }
+                            "media:thumbnail", "media:content" -> {
+                                val url = parser.getAttributeValue(null, "url")
+                                val type = parser.getAttributeValue(null, "type")
+                                if (url != null && image == null &&
+                                    (type == null || type.startsWith("image/"))
+                                ) image = url
+                            }
+                            "enclosure" -> {
+                                val url = parser.getAttributeValue(null, "url")
+                                val type = parser.getAttributeValue(null, "type")
+                                if (url != null && image == null &&
+                                    type != null && type.startsWith("image/")
+                                ) image = url
+                            }
                         }
                     }
                 }
@@ -51,8 +69,9 @@ object RssParser {
                     if ((tag == "item" || tag == "entry") && inEntry) {
                         val title = current["title"].orEmpty()
                         val url = current["link"].orEmpty()
-                        val summary = current["description"]
+                        val rawSummary = current["description"]
                             ?: current["summary"]
+                            ?: current["content:encoded"]
                             ?: current["content"]
                             ?: ""
                         val date = current["pubDate"]
@@ -60,6 +79,7 @@ object RssParser {
                             ?: current["updated"]
                             ?: current["dc:date"]
                             ?: ""
+                        if (image == null) image = extractFirstImg(rawSummary)
                         if (title.isNotBlank() && url.isNotBlank()) {
                             items += NewsItem(
                                 title = cleanHtml(title),
@@ -67,11 +87,13 @@ object RssParser {
                                 source = source.name,
                                 category = source.category,
                                 publishedAt = parseDate(date),
-                                summary = cleanHtml(summary).take(400)
+                                summary = cleanHtml(rawSummary).take(500),
+                                imageUrl = image
                             )
                         }
                         inEntry = false
                         current.clear()
+                        image = null
                     }
                 }
             }
@@ -86,8 +108,12 @@ object RssParser {
         ""
     }
 
+    private val imgSrcRegex = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
     private val htmlTag = Regex("<[^>]+>")
     private val whitespace = Regex("\\s+")
+
+    private fun extractFirstImg(html: String): String? =
+        imgSrcRegex.find(html)?.groupValues?.getOrNull(1)
 
     private fun cleanHtml(s: String): String = s
         .replace(htmlTag, " ")
