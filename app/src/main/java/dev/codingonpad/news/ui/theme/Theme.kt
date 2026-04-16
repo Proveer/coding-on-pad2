@@ -1,16 +1,23 @@
 package dev.codingonpad.news.ui.theme
 
+import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import dev.codingonpad.news.ui.ThemePreference
 
 /**
- * Custom Indigo-seeded scheme. Skips Material You dynamic color to keep a
- * distinct brand identity instead of matching the device wallpaper.
+ * Custom Indigo-seeded palette. Keeps a distinct brand identity by default;
+ * Material You can be opted in via [useDynamicColor] on API 31+.
  */
 private val LightColors = lightColorScheme(
     primary = Color(0xFF2F4FC7),
@@ -75,6 +82,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun CodingOnPadTheme(
     themePreference: ThemePreference = ThemePreference.AUTO,
+    useDynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (themePreference) {
@@ -82,10 +90,32 @@ fun CodingOnPadTheme(
         ThemePreference.LIGHT -> false
         ThemePreference.DARK -> true
     }
-    val colors = if (darkTheme) DarkColors else LightColors
+    val base = when {
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val ctx = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        }
+        darkTheme -> DarkColors
+        else -> LightColors
+    }
+
+    val animSpec = tween<Color>(durationMillis = 260)
+    val animatedBackground by animateColorAsState(base.background, animSpec, label = "bg")
+    val animatedSurface by animateColorAsState(base.surface, animSpec, label = "surface")
+    val animatedPrimary by animateColorAsState(base.primary, animSpec, label = "primary")
+    val animatedOnSurface by animateColorAsState(base.onSurface, animSpec, label = "onSurface")
+
+    val scheme = base.copy(
+        background = animatedBackground,
+        surface = animatedSurface,
+        primary = animatedPrimary,
+        onSurface = animatedOnSurface
+    )
+
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = scheme,
         typography = CodingOnPadTypography,
+        shapes = AppShapes,
         content = content
     )
 }

@@ -6,6 +6,8 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -29,7 +31,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BrightnessAuto
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,6 +52,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -84,6 +88,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import dev.codingonpad.news.data.FeedSource
 import dev.codingonpad.news.data.NewsItem
+import dev.codingonpad.news.ui.theme.Spacing
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -121,13 +126,7 @@ fun NewsScreen(
         topBar = {
             Column(Modifier.background(MaterialTheme.colorScheme.background)) {
                 CenterAlignedTopAppBar(
-                    title = {
-                        Text(
-                            "Coding on Pad",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    },
+                    title = { BrandTitle() },
                     actions = {
                         IconButton(onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -177,6 +176,10 @@ fun NewsScreen(
                     error = state.error,
                     searchActive = state.searchQuery.isNotBlank()
                 )
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                )
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -222,15 +225,18 @@ fun NewsScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp
+                        start = Spacing.md,
+                        end = Spacing.md,
+                        top = Spacing.sm,
+                        bottom = Spacing.lg + Spacing.xs
                     ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm + Spacing.xs)
                 ) {
                     items(visible, key = { it.url }) { item ->
                         NewsCard(
                             item = item,
                             modifier = Modifier.animateItem(
-                                fadeInSpec = tween(240),
+                                fadeInSpec = tween(240, easing = FastOutSlowInEasing),
                                 placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
                             ),
                             onOpen = {
@@ -242,6 +248,24 @@ fun NewsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BrandTitle() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Spacer(Modifier.width(Spacing.sm))
+        Text(
+            text = "Coding on Pad",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -259,7 +283,7 @@ private fun SearchBar(
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
         placeholder = {
             Text(
                 "Search papers, AI, code\u2026",
@@ -276,7 +300,7 @@ private fun SearchBar(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(Spacing.xs + 2.dp))
                 }
                 if (query.isNotEmpty()) {
                     IconButton(onClick = onClear) {
@@ -289,12 +313,14 @@ private fun SearchBar(
             }
         },
         singleLine = true,
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
+            unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
     )
 }
@@ -309,14 +335,14 @@ private fun CategoryRow(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(scroll)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         FilterChip(
             selected = selected == null,
             onClick = { onSelect(null) },
             label = { Text("All", style = MaterialTheme.typography.labelLarge) },
-            shape = RoundedCornerShape(50),
+            shape = MaterialTheme.shapes.extraLarge,
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = MaterialTheme.colorScheme.primary,
                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -327,7 +353,7 @@ private fun CategoryRow(
                 selected = selected == cat,
                 onClick = { onSelect(cat) },
                 label = { Text(cat.label(), style = MaterialTheme.typography.labelLarge) },
-                shape = RoundedCornerShape(50),
+                shape = MaterialTheme.shapes.extraLarge,
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -345,12 +371,23 @@ private fun StatusBar(
     error: String?,
     searchActive: Boolean
 ) {
+    val dotColor by animateColorAsState(
+        targetValue = when {
+            error != null -> MaterialTheme.colorScheme.error
+            searchActive -> MaterialTheme.colorScheme.tertiary
+            else -> MaterialTheme.colorScheme.primary
+        },
+        label = "statusDot"
+    )
     val text = buildString {
         when {
             searchActive -> append("LIVE SEARCH  \u00b7  arXiv + Hacker News")
             lastUpdated > 0L -> {
                 append("UPDATED ")
-                append(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(lastUpdated)).uppercase())
+                append(
+                    DateFormat.getTimeInstance(DateFormat.SHORT)
+                        .format(Date(lastUpdated)).uppercase()
+                )
                 append("  \u00b7  ")
                 append("$itemCount stories")
             }
@@ -365,14 +402,25 @@ private fun StatusBar(
             append(error)
         }
     }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp)
-    )
+            .padding(horizontal = Spacing.md + Spacing.xs, vertical = Spacing.xs + 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Spacer(Modifier.width(Spacing.sm))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -384,35 +432,56 @@ private fun NewsCard(
     var expanded by rememberSaveable(item.url) { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
 
+    val containerColor by animateColorAsState(
+        targetValue = if (expanded) {
+            MaterialTheme.colorScheme.surfaceContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = tween(220),
+        label = "cardContainer"
+    )
+    val borderAlpha by animateColorAsState(
+        targetValue = if (expanded) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+        },
+        animationSpec = tween(220),
+        label = "cardBorder"
+    )
+
     Card(
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             expanded = !expanded
         },
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = if (expanded) 6.dp else 0.dp,
+                shape = MaterialTheme.shapes.large,
+                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-        ),
-        shape = RoundedCornerShape(18.dp)
+        border = BorderStroke(1.dp, borderAlpha),
+        shape = MaterialTheme.shapes.large
     ) {
         Column {
-            Row(Modifier.padding(12.dp)) {
+            Row(Modifier.padding(Spacing.sm + Spacing.xs)) {
                 Thumbnail(
                     item = item,
                     modifier = Modifier
                         .size(96.dp)
-                        .clip(RoundedCornerShape(14.dp)),
+                        .clip(MaterialTheme.shapes.medium),
                     initialFontSize = 32
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(Spacing.sm + Spacing.xs))
                 Column(Modifier.fillMaxWidth()) {
                     MetaRow(item)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(Spacing.xs + 2.dp))
                     Text(
                         text = item.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -421,10 +490,10 @@ private fun NewsCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     if (item.category == FeedSource.Category.HACKER_NEWS) {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(Spacing.xs + 2.dp))
                         HnStatsRow(item)
                     } else if (item.summary.isNotBlank() && !expanded) {
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(Spacing.xs))
                         Text(
                             text = item.summary,
                             style = MaterialTheme.typography.bodySmall,
@@ -436,11 +505,23 @@ private fun NewsCard(
                 }
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = tween(260, easing = FastOutSlowInEasing)
+                ) + androidx.compose.animation.fadeIn(tween(260)),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                ) + androidx.compose.animation.fadeOut(tween(180))
+            ) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                        .padding(
+                            start = Spacing.md,
+                            end = Spacing.md,
+                            bottom = Spacing.md
+                        )
                 ) {
                     if (!item.imageUrl.isNullOrBlank() ||
                         item.category != FeedSource.Category.HACKER_NEWS
@@ -450,10 +531,10 @@ private fun NewsCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(16f / 9f)
-                                .clip(RoundedCornerShape(16.dp)),
+                                .clip(MaterialTheme.shapes.medium),
                             initialFontSize = 64
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(Spacing.sm + Spacing.xs))
                     }
                     if (item.summary.isNotBlank()) {
                         Text(
@@ -461,19 +542,19 @@ private fun NewsCard(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(Spacing.sm + Spacing.xs))
                     }
                     Button(
                         onClick = onOpen,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = MaterialTheme.shapes.medium,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
                         Icon(Icons.Filled.OpenInNew, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(Spacing.sm))
                         Text(
                             text = "READ ARTICLE",
                             style = MaterialTheme.typography.labelLarge,
@@ -490,7 +571,7 @@ private fun NewsCard(
 private fun MetaRow(item: NewsItem) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         CategoryPill(item.category)
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(Spacing.sm))
         Text(
             text = item.source.uppercase(),
             style = MaterialTheme.typography.labelSmall,
@@ -499,7 +580,7 @@ private fun MetaRow(item: NewsItem) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false)
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(Spacing.sm))
         Text(
             text = relativeTime(item.publishedAt),
             style = MaterialTheme.typography.labelSmall,
@@ -512,7 +593,7 @@ private fun MetaRow(item: NewsItem) {
 private fun HnStatsRow(item: NewsItem) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         item.points?.let {
             StatChip(icon = { Icon(Icons.Filled.ArrowUpward, null, Modifier.size(14.dp)) }, text = "$it")
@@ -532,8 +613,8 @@ private fun StatChip(icon: @Composable () -> Unit, text: String) {
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            modifier = Modifier.padding(horizontal = Spacing.sm + 2.dp, vertical = Spacing.xs)
         ) {
             icon()
             Text(
@@ -557,7 +638,7 @@ private fun CategoryPill(category: FeedSource.Category) {
         Text(
             text = category.label().uppercase(),
             style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+            modifier = Modifier.padding(horizontal = Spacing.sm + 2.dp, vertical = 3.dp)
         )
     }
 }
@@ -614,12 +695,37 @@ private fun EmptyState(error: String?, searching: Boolean) {
         searching -> "No matches yet. Try a different query."
         else -> "No news yet. Pull to refresh."
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(Spacing.xl),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.size(88.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.Inbox,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
